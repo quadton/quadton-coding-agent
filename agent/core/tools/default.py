@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from agent.core.tools.context import ToolContext
+from agent.core.tools.edit_tools import EditFileTool
 from agent.core.tools.file_tools import ListDirectoryTool
 from agent.core.tools.read_tools import ReadFileTool
 from agent.core.tools.registry import ToolRegistry
@@ -33,6 +34,10 @@ def create_default_registry(
 
     registry.register(
         WriteFileTool(context)
+    )
+
+    registry.register(
+        EditFileTool(context)
     )
 
     return registry
