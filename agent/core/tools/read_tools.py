@@ -1,4 +1,3 @@
-from pathlib import Path
 from typing import Any
 
 from agent.core.tools.base import BaseTool
@@ -10,9 +9,7 @@ class ReadFileTool(BaseTool):
     name = "read_file"
 
     description = (
-        "Read the contents of a text file. "
-        "Use this to inspect source code, configuration, "
-        "documentation, or other text files."
+        "Read the contents of a text file inside the project."
     )
 
     def execute(
@@ -27,18 +24,29 @@ class ReadFileTool(BaseTool):
                 "error": "File path cannot be empty.",
             }
 
-        target = Path(path).resolve()
+        try:
+            target = self.context.resolve_path(path)
+
+        except PermissionError as exc:
+            return {
+                "success": False,
+                "error": str(exc),
+            }
 
         if not target.exists():
             return {
                 "success": False,
-                "error": f"File does not exist: {path}",
+                "error": (
+                    f"File does not exist: {path}"
+                ),
             }
 
         if not target.is_file():
             return {
                 "success": False,
-                "error": f"Path is not a file: {path}",
+                "error": (
+                    f"Path is not a file: {path}"
+                ),
             }
 
         try:
@@ -82,8 +90,8 @@ class ReadFileTool(BaseTool):
                         "path": {
                             "type": "string",
                             "description": (
-                                "Path to the text file "
-                                "that should be read."
+                                "Path to the text file, "
+                                "relative to the project root."
                             ),
                         }
                     },
