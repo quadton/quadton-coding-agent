@@ -1,4 +1,3 @@
-from pathlib import Path
 from typing import Any
 
 from agent.core.tools.base import BaseTool
@@ -10,7 +9,7 @@ class ListDirectoryTool(BaseTool):
     name = "list_directory"
 
     description = (
-        "List the files and directories inside a directory."
+        "List files and directories inside a project directory."
     )
 
     def execute(
@@ -19,39 +18,59 @@ class ListDirectoryTool(BaseTool):
     ) -> dict[str, Any]:
         """List directory contents."""
 
-        target = Path(path).resolve()
+        try:
+            target = self.context.resolve_path(path)
+
+        except PermissionError as exc:
+            return {
+                "success": False,
+                "error": str(exc),
+            }
 
         if not target.exists():
             return {
                 "success": False,
-                "error": f"Path does not exist: {path}",
+                "error": (
+                    f"Path does not exist: {path}"
+                ),
             }
 
         if not target.is_dir():
             return {
                 "success": False,
-                "error": f"Path is not a directory: {path}",
+                "error": (
+                    f"Path is not a directory: {path}"
+                ),
             }
 
         entries = []
 
-        for entry in sorted(
-            target.iterdir(),
-            key=lambda item: (
-                not item.is_dir(),
-                item.name.lower(),
-            ),
-        ):
-            entries.append(
-                {
-                    "name": entry.name,
-                    "type": (
-                        "directory"
-                        if entry.is_dir()
-                        else "file"
-                    ),
-                }
-            )
+        try:
+            for entry in sorted(
+                target.iterdir(),
+                key=lambda item: (
+                    not item.is_dir(),
+                    item.name.lower(),
+                ),
+            ):
+                entries.append(
+                    {
+                        "name": entry.name,
+                        "type": (
+                            "directory"
+                            if entry.is_dir()
+                            else "file"
+                        ),
+                    }
+                )
+
+        except OSError as exc:
+            return {
+                "success": False,
+                "error": (
+                    f"Failed to list directory: {exc}"
+                ),
+            }
 
         return {
             "success": True,
@@ -73,9 +92,9 @@ class ListDirectoryTool(BaseTool):
                         "path": {
                             "type": "string",
                             "description": (
-                                "Directory to inspect. "
-                                "Defaults to the current "
-                                "working directory."
+                                "Directory to inspect, "
+                                "relative to the project root. "
+                                "Defaults to '.'."
                             ),
                         }
                     },
