@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any
 
 from agent.config import config
@@ -20,6 +21,7 @@ class AgentEngine:
         session_id: int | None = None,
         tools: ToolRegistry | None = None,
         system_prompt: str | None = None,
+        project_root: str | Path = ".",
     ):
         self.provider = provider or OpenRouterProvider()
 
@@ -31,6 +33,10 @@ class AgentEngine:
                 "Set OPENROUTER_MODEL in your .env file "
                 "or provide a model explicitly."
             )
+
+        self.project_root = Path(
+            project_root
+        ).resolve()
 
         self.memory = memory or Memory()
 
@@ -55,7 +61,9 @@ class AgentEngine:
             self.session.get_messages()
         )
 
-        self.tools = tools or create_default_registry()
+        self.tools = tools or create_default_registry(
+            self.project_root
+        )
 
     def add_message(
         self,
