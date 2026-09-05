@@ -5,6 +5,7 @@ from agent.core.tools.file_tools import ListDirectoryTool
 from agent.core.tools.read_tools import ReadFileTool
 from agent.core.tools.registry import ToolRegistry
 from agent.core.tools.search_tools import SearchFilesTool
+from agent.core.tools.write_tools import WriteFileTool
 
 
 def create_default_registry(
@@ -28,6 +29,10 @@ def create_default_registry(
 
     registry.register(
         SearchFilesTool(context)
+    )
+
+    registry.register(
+        WriteFileTool(context)
     )
 
     return registry
