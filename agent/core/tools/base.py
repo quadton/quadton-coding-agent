@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
+from agent.core.tools.context import ToolContext
+
 
 class BaseTool(ABC):
     """Base interface for all agent tools."""
@@ -8,8 +10,17 @@ class BaseTool(ABC):
     name: str = "unknown"
     description: str = ""
 
+    def __init__(
+        self,
+        context: ToolContext,
+    ) -> None:
+        self.context = context
+
     @abstractmethod
-    def execute(self, **kwargs: Any) -> Any:
+    def execute(
+        self,
+        **kwargs: Any,
+    ) -> Any:
         """Execute the tool."""
         raise NotImplementedError
 
