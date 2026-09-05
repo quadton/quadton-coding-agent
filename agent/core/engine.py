@@ -5,10 +5,12 @@ from agent.core.memory import Memory
 from agent.core.providers.base import BaseProvider
 from agent.core.providers.openrouter_provider import OpenRouterProvider
 from agent.core.session import Session
+from agent.core.tools.default import create_default_registry
+from agent.core.tools.registry import ToolRegistry
 
 
 class AgentEngine:
-    """Core conversation engine for Quadton Coding Agent."""
+    """Core agentic engine for Quadton Coding Agent."""
 
     def __init__(
         self,
@@ -16,6 +18,7 @@ class AgentEngine:
         model: str | None = None,
         memory: Memory | None = None,
         session_id: int | None = None,
+        tools: ToolRegistry | None = None,
     ):
         self.provider = provider or OpenRouterProvider()
 
@@ -39,71 +42,151 @@ class AgentEngine:
             self.session.get_messages()
         )
 
+        self.tools = tools or create_default_registry()
+
     def add_message(
         self,
         role: str,
         content: str,
+        **extra: Any,
     ) -> None:
         """Add and persist a message."""
 
-        message = {
+        message: dict[str, Any] = {
             "role": role,
             "content": content,
         }
 
+        message.update(extra)
+
         self.messages.append(message)
 
-        self.session.save_message(
-            role,
-            content,
-        )
+        # Only normal conversational messages are persisted
+        # to SQLite at this stage.
+        if role in {"user", "assistant"}:
+            self.session.save_message(
+                role,
+                content or "",
+            )
+
+    def _execute_tool_call(
+        self,
+        tool_call: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Execute a model-requested tool."""
+
+        function = tool_call["function"]
+
+        name = function["name"]
+        arguments = function.get("arguments", "{}")
+
+        try:
+            import json
+
+            parsed_arguments = json.loads(arguments)
+
+        except json.JSONDecodeError as exc:
+            return {
+                "success": False,
+                "error": (
+                    f"Invalid tool arguments: {exc}"
+                ),
+            }
+
+        try:
+            result = self.tools.execute(
+                name,
+                parsed_arguments,
+            )
+
+            return {
+                "success": True,
+                "result": result,
+            }
+
+        except Exception as exc:
+            return {
+                "success": False,
+                "error": str(exc),
+            }
 
     def send_message(
         self,
         content: str,
     ) -> dict[str, Any]:
-        """Send a user message and return the provider response."""
+        """Run the agentic tool-calling loop."""
 
         self.add_message(
             "user",
             content,
         )
 
-        try:
+        while True:
             response = self.provider.send(
                 self.messages,
                 model=self.model,
+                tools=self.tools.schemas(),
             )
 
-        except Exception:
-            self.messages.pop()
-            raise
+            message = response.get(
+                "message",
+                {},
+            )
 
-        message = response.get(
-            "message",
-            {},
+            tool_calls = message.get(
+                "tool_calls"
+            ) or []
+
+            if not tool_calls:
+                assistant_content = (
+                    message.get("content")
+                    or ""
+                )
+
+                self.add_message(
+                    "assistant",
+                    assistant_content,
+                )
+
+                return response
+
+            assistant_message = {
+                "role": "assistant",
+                "content": message.get("content"),
+                "tool_calls": tool_calls,
+            }
+
+            self.messages.append(
+                assistant_message
+            )
+
+            for tool_call in tool_calls:
+                result = self._execute_tool_call(
+                    tool_call
+                )
+
+                self.messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call["id"],
+                        "content": self._serialize_result(
+                            result
+                        ),
+                    }
+                )
+
+    @staticmethod
+    def _serialize_result(
+        result: dict[str, Any],
+    ) -> str:
+        """Convert a tool result into JSON text."""
+
+        import json
+
+        return json.dumps(
+            result,
+            ensure_ascii=False,
         )
-
-        assistant_message = {
-            "role": message.get(
-                "role",
-                "assistant",
-            ),
-            "content": message.get(
-                "content"
-            ) or "",
-        }
-
-        self.messages.append(
-            assistant_message
-        )
-
-        self.session.save_message(
-            assistant_message["role"],
-            assistant_message["content"],
-        )
-
-        return response
 
     def get_history(
         self,
