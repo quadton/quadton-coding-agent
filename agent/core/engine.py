@@ -19,6 +19,7 @@ class AgentEngine:
         memory: Memory | None = None,
         session_id: int | None = None,
         tools: ToolRegistry | None = None,
+        system_prompt: str | None = None,
     ):
         self.provider = provider or OpenRouterProvider()
 
@@ -38,7 +39,19 @@ class AgentEngine:
             session_id=session_id,
         )
 
-        self.messages: list[dict[str, Any]] = (
+        self.system_prompt = system_prompt
+
+        self.messages: list[dict[str, Any]] = []
+
+        if self.system_prompt:
+            self.messages.append(
+                {
+                    "role": "system",
+                    "content": self.system_prompt,
+                }
+            )
+
+        self.messages.extend(
             self.session.get_messages()
         )
 
@@ -61,8 +74,6 @@ class AgentEngine:
 
         self.messages.append(message)
 
-        # Only normal conversational messages are persisted
-        # to SQLite at this stage.
         if role in {"user", "assistant"}:
             self.session.save_message(
                 role,
@@ -196,6 +207,14 @@ class AgentEngine:
         return list(self.messages)
 
     def clear_history(self) -> None:
-        """Clear the in-memory conversation."""
+        """Clear conversation history while preserving system instructions."""
 
         self.messages.clear()
+
+        if self.system_prompt:
+            self.messages.append(
+                {
+                    "role": "system",
+                    "content": self.system_prompt,
+                }
+            )
