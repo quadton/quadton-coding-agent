@@ -12,15 +12,15 @@ class QuadtonAgent:
         engine: AgentEngine | None = None,
         instructions_path: str | Path = "AGENT.md",
     ) -> None:
-        self.engine = engine or AgentEngine()
-
         self.instructions_path = Path(
             instructions_path
         ).resolve()
 
         self.instructions = self._load_instructions()
 
-        self._initialize_system_message()
+        self.engine = engine or AgentEngine(
+            system_prompt=self.instructions,
+        )
 
     def _load_instructions(self) -> str:
         """Load the project's AGENT.md instructions."""
@@ -48,28 +48,10 @@ class QuadtonAgent:
                 f"{exc}"
             ) from exc
 
-    def _initialize_system_message(self) -> None:
-        """Add the AGENT.md instructions to the model context."""
-
-        messages = self.engine.get_history()
-
-        has_system_message = any(
-            message.get("role") == "system"
-            for message in messages
-        )
-
-        if has_system_message:
-            return
-
-        self.engine.messages.insert(
-            0,
-            {
-                "role": "system",
-                "content": self.instructions,
-            },
-        )
-
-    def run(self, task: str) -> dict[str, Any]:
+    def run(
+        self,
+        task: str,
+    ) -> dict[str, Any]:
         """Run the agent against a user task."""
 
         if not task.strip():
@@ -77,9 +59,18 @@ class QuadtonAgent:
                 "Agent task cannot be empty."
             )
 
-        return self.engine.send_message(task)
+        return self.engine.send_message(
+            task
+        )
 
-    def get_history(self) -> list[dict[str, Any]]:
+    def get_history(
+        self,
+    ) -> list[dict[str, Any]]:
         """Return the current agent conversation history."""
 
         return self.engine.get_history()
+
+    def clear_history(self) -> None:
+        """Clear the conversation while preserving AGENT.md."""
+
+        self.engine.clear_history()
