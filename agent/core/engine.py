@@ -4,7 +4,7 @@ from typing import Any
 from agent.config import config
 from agent.core.memory import Memory
 from agent.core.providers.base import BaseProvider
-from agent.core.providers.openrouter_provider import OpenRouterProvider
+from agent.core.providers.factory import create_provider
 from agent.core.session import Session
 from agent.core.tools.default import create_default_registry
 from agent.core.tools.registry import ToolRegistry
@@ -23,15 +23,30 @@ class AgentEngine:
         system_prompt: str | None = None,
         project_root: str | Path = ".",
     ):
-        self.provider = provider or OpenRouterProvider()
+        # Use the explicitly supplied provider, otherwise create
+        # the provider configured through AI_PROVIDER.
+        self.provider = provider or create_provider()
 
-        self.model = model or config.openrouter_model
+        # Use the explicitly supplied model, otherwise load the
+        # model configured for the selected provider.
+        if model:
+            self.model = model
+        elif self.provider.name == "openrouter":
+            self.model = config.openrouter_model
+        elif self.provider.name == "unorouter":
+            self.model = config.unorouter_model
+        else:
+            raise ValueError(
+                f"No model configuration exists for provider "
+                f"'{self.provider.name}'."
+            )
 
         if not self.model:
             raise ValueError(
-                "No model is configured. "
-                "Set OPENROUTER_MODEL in your .env file "
-                "or provide a model explicitly."
+                f"No model is configured for provider "
+                f"'{self.provider.name}'. "
+                "Set the appropriate model variable in your "
+                ".env file or provide a model explicitly."
             )
 
         self.project_root = Path(
@@ -97,12 +112,17 @@ class AgentEngine:
         function = tool_call["function"]
 
         name = function["name"]
-        arguments = function.get("arguments", "{}")
+        arguments = function.get(
+            "arguments",
+            "{}",
+        )
 
         try:
             import json
 
-            parsed_arguments = json.loads(arguments)
+            parsed_arguments = json.loads(
+                arguments
+            )
 
         except json.JSONDecodeError as exc:
             return {
@@ -171,7 +191,9 @@ class AgentEngine:
 
             assistant_message = {
                 "role": "assistant",
-                "content": message.get("content"),
+                "content": message.get(
+                    "content"
+                ),
                 "tool_calls": tool_calls,
             }
 
