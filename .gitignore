@@ -64,3 +64,6 @@ Thumbs.db
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Node.js dependencies
+node_modules/
