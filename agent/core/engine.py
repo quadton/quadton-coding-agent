@@ -15,6 +15,8 @@ from agent.core.tools.registry import ToolRegistry
 class AgentEngine:
     """Core agentic engine for Quadton Coding Agent."""
 
+    DEFAULT_MAX_ITERATIONS = 20
+
     def __init__(
         self,
         provider: BaseProvider | None = None,
@@ -25,13 +27,15 @@ class AgentEngine:
         system_prompt: str | None = None,
         project_root: str | Path = ".",
         execution_backend: ExecutionBackend | None = None,
+        max_iterations: int = DEFAULT_MAX_ITERATIONS,
     ):
-        # Use the explicitly supplied provider, otherwise create
-        # the provider configured through AI_PROVIDER.
+        if max_iterations < 1:
+            raise ValueError(
+                "max_iterations must be greater than 0."
+            )
+
         self.provider = provider or create_provider()
 
-        # Use the explicitly supplied model, otherwise load the
-        # model configured for the selected provider.
         if model:
             self.model = model
         elif self.provider.name == "openrouter":
@@ -64,6 +68,8 @@ class AgentEngine:
         )
 
         self.system_prompt = system_prompt
+
+        self.max_iterations = max_iterations
 
         self.messages: list[dict[str, Any]] = []
 
@@ -169,7 +175,9 @@ class AgentEngine:
             content,
         )
 
-        while True:
+        iterations = 0
+
+        while iterations < self.max_iterations:
             response = self.provider.send(
                 self.messages,
                 model=self.model,
@@ -198,6 +206,8 @@ class AgentEngine:
 
                 return response
 
+            iterations += 1
+
             assistant_message = {
                 "role": "assistant",
                 "content": message.get(
@@ -224,6 +234,25 @@ class AgentEngine:
                         ),
                     }
                 )
+
+        limit_message = (
+            "The agent reached its maximum execution "
+            f"limit of {self.max_iterations} tool rounds "
+            "without producing a final response."
+        )
+
+        self.add_message(
+            "assistant",
+            limit_message,
+        )
+
+        return {
+            "message": {
+                "role": "assistant",
+                "content": limit_message,
+            },
+            "finish_reason": "max_iterations",
+        }
 
     @staticmethod
     def _serialize_result(
