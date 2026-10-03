@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from agent.core.execution.base import ExecutionBackend
 from agent.core.tools.context import ToolContext
 from agent.core.tools.edit_tools import EditFileTool
 from agent.core.tools.execute_tools import ExecuteCommandTool
@@ -12,6 +13,7 @@ from agent.core.tools.write_tools import WriteFileTool
 
 def create_default_registry(
     project_root: str | Path = ".",
+    execution_backend: ExecutionBackend | None = None,
 ) -> ToolRegistry:
     """Create the default tool registry."""
 
@@ -40,7 +42,10 @@ def create_default_registry(
     )
 
     registry.register(
-        ExecuteCommandTool(context)
+        ExecuteCommandTool(
+            context,
+            backend=execution_backend,
+        )
     )
 
     return registry
