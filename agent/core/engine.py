@@ -2,6 +2,8 @@ from pathlib import Path
 from typing import Any
 
 from agent.config import config
+from agent.core.execution.base import ExecutionBackend
+from agent.core.execution.local import LocalExecutionBackend
 from agent.core.memory import Memory
 from agent.core.providers.base import BaseProvider
 from agent.core.providers.factory import create_provider
@@ -20,6 +22,7 @@ class AgentEngine:
         memory: Memory | None = None,
         session_id: int | None = None,
         tools: ToolRegistry | None = None,
+        execution_backend: ExecutionBackend | None = None,
         system_prompt: str | None = None,
         project_root: str | Path = ".",
     ):
@@ -76,8 +79,18 @@ class AgentEngine:
             self.session.get_messages()
         )
 
+        # The engine owns the execution backend.
+        self.execution_backend = (
+            execution_backend
+            or LocalExecutionBackend()
+        )
+
+        # If a custom registry is supplied, preserve it.
+        # Otherwise create the default registry using the
+        # engine-owned execution backend.
         self.tools = tools or create_default_registry(
-            self.project_root
+            self.project_root,
+            execution_backend=self.execution_backend,
         )
 
     def add_message(
