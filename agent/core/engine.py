@@ -16,6 +16,7 @@ class AgentEngine:
     """Core agentic engine for Quadton Coding Agent."""
 
     DEFAULT_MAX_ITERATIONS = 20
+    AGENT_INSTRUCTIONS_FILE = "AGENT.md"
 
     def __init__(
         self,
@@ -67,7 +68,10 @@ class AgentEngine:
             session_id=session_id,
         )
 
-        self.system_prompt = system_prompt
+        if system_prompt is not None:
+            self.system_prompt = system_prompt
+        else:
+            self.system_prompt = self._load_agent_instructions()
 
         self.max_iterations = max_iterations
 
@@ -94,6 +98,25 @@ class AgentEngine:
             self.project_root,
             execution_backend=self.execution_backend,
         )
+
+    def _load_agent_instructions(self) -> str | None:
+        """Load project instructions from AGENT.md if present."""
+
+        agent_file = (
+            self.project_root
+            / self.AGENT_INSTRUCTIONS_FILE
+        )
+
+        if not agent_file.is_file():
+            return None
+
+        try:
+            return agent_file.read_text(
+                encoding="utf-8"
+            ).strip() or None
+
+        except OSError:
+            return None
 
     def add_message(
         self,
