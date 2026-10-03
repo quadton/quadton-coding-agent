@@ -24,6 +24,12 @@ class Config:
         "openrouter",
     ).strip().lower()
 
+    # Execution backend
+    execution_backend: str = os.getenv(
+        "EXECUTION_BACKEND",
+        "local",
+    ).strip().lower()
+
     # OpenRouter
     openrouter_api_key: str | None = os.getenv(
         "OPENROUTER_API_KEY"
@@ -57,6 +63,14 @@ class Config:
     @property
     def has_unorouter_model(self) -> bool:
         return bool(self.unorouter_model)
+
+    @property
+    def uses_local_execution(self) -> bool:
+        return self.execution_backend == "local"
+
+    @property
+    def uses_podman_execution(self) -> bool:
+        return self.execution_backend == "podman"
 
 
 config = Config()
