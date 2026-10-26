@@ -1,3 +1,4 @@
+
 import subprocess
 from pathlib import Path
 
@@ -5,9 +6,7 @@ from agent.core.execution.podman import PodmanExecutionBackend
 
 
 def test_podman_backend_name():
-    backend = PodmanExecutionBackend()
-
-    assert backend.name == "podman"
+    assert PodmanExecutionBackend().name == "podman"
 
 
 def test_podman_backend_defaults():
@@ -27,25 +26,18 @@ def test_podman_backend_custom_options():
     assert backend.network is True
 
 
-def test_podman_backend_builds_isolated_command(
+def test_podman_backend_starts_and_reuses_container(
     tmp_path: Path,
     monkeypatch,
 ):
-    captured = {}
+    calls = []
 
-    def fake_run(
-        command,
-        *,
-        capture_output,
-        text,
-        timeout,
-    ):
-        captured["command"] = command
-        captured["timeout"] = timeout
+    def fake_run(command, **kwargs):
+        calls.append(command)
 
         class Result:
             returncode = 0
-            stdout = "hello"
+            stdout = "container-id"
             stderr = ""
 
         return Result()
@@ -57,55 +49,39 @@ def test_podman_backend_builds_isolated_command(
 
     backend = PodmanExecutionBackend()
 
-    result = backend.execute(
-        "printf 'hello'",
-        timeout=45,
-        cwd=str(tmp_path),
-    )
+    first = backend.execute("echo first", cwd=str(tmp_path))
+    second = backend.execute("echo second", cwd=str(tmp_path))
 
-    command = captured["command"]
+    assert first.success is True
+    assert second.success is True
+    assert len(calls) == 3
 
-    assert result.success is True
-    assert result.stdout == "hello"
-    assert result.exit_code == 0
-    assert captured["timeout"] == 45
+    start_command = calls[0]
+    assert start_command[:2] == ["podman", "run"]
+    assert "--detach" in start_command
+    assert "--network" in start_command
+    assert "none" in start_command
+    assert f"{tmp_path}:/workspace" in start_command
 
-    assert command[:3] == [
-        "podman",
-        "run",
-        "--rm",
-    ]
+    assert calls[1][:2] == ["podman", "exec"]
+    assert calls[2][:2] == ["podman", "exec"]
+    assert calls[1][3] == calls[2][3]
 
-    assert "--network" in command
-    assert "none" in command
-    assert "--volume" in command
-    assert f"{tmp_path}:/workspace" in command
-    assert "--workdir" in command
-    assert "/workspace" in command
-    assert "python:3.12-slim" in command
-    assert "sh" in command
-    assert "-c" in command
-    assert "printf 'hello'" in command
+    backend.close()
 
 
 def test_podman_backend_network_can_be_enabled(
     tmp_path: Path,
     monkeypatch,
 ):
-    captured = {}
+    captured = []
 
-    def fake_run(
-        command,
-        *,
-        capture_output,
-        text,
-        timeout,
-    ):
-        captured["command"] = command
+    def fake_run(command, **kwargs):
+        captured.append(command)
 
         class Result:
             returncode = 0
-            stdout = ""
+            stdout = "container-id"
             stderr = ""
 
         return Result()
@@ -115,32 +91,24 @@ def test_podman_backend_network_can_be_enabled(
         fake_run,
     )
 
-    backend = PodmanExecutionBackend(
-        network=True,
-    )
-
-    result = backend.execute(
-        "echo test",
-        cwd=str(tmp_path),
-    )
+    backend = PodmanExecutionBackend(network=True)
+    result = backend.execute("echo test", cwd=str(tmp_path))
 
     assert result.success is True
-    assert "--network" not in captured["command"]
+    assert "--network" not in captured[0]
+
+    backend.close()
 
 
 def test_podman_backend_empty_command():
-    backend = PodmanExecutionBackend()
-
-    result = backend.execute("   ")
+    result = PodmanExecutionBackend().execute("   ")
 
     assert result.success is False
     assert result.stderr == "Command must not be empty."
 
 
 def test_podman_backend_invalid_timeout():
-    backend = PodmanExecutionBackend()
-
-    result = backend.execute(
+    result = PodmanExecutionBackend().execute(
         "echo test",
         timeout=0,
     )
@@ -153,16 +121,23 @@ def test_podman_backend_timeout(
     tmp_path: Path,
     monkeypatch,
 ):
-    def fake_run(
-        command,
-        *,
-        capture_output,
-        text,
-        timeout,
-    ):
+    calls = 0
+
+    def fake_run(command, **kwargs):
+        nonlocal calls
+        calls += 1
+
+        if calls == 1:
+            class StartResult:
+                returncode = 0
+                stdout = "container-id"
+                stderr = ""
+
+            return StartResult()
+
         raise subprocess.TimeoutExpired(
             command,
-            timeout,
+            kwargs.get("timeout"),
             output="partial output",
             stderr="partial error",
         )
@@ -173,7 +148,6 @@ def test_podman_backend_timeout(
     )
 
     backend = PodmanExecutionBackend()
-
     result = backend.execute(
         "sleep 60",
         timeout=1,
@@ -182,21 +156,45 @@ def test_podman_backend_timeout(
 
     assert result.success is False
     assert result.timed_out is True
-    assert result.exit_code is None
     assert result.stdout == "partial output"
     assert result.stderr == "partial error"
 
+    backend.close()
 
-def test_podman_backend_unavailable(
+
+def test_podman_backend_rejects_directory_outside_project(
+    tmp_path: Path,
     monkeypatch,
 ):
-    def fake_run(
-        command,
-        *,
-        capture_output,
-        text,
-        timeout,
-    ):
+    outside = tmp_path.parent / "outside-project"
+    outside.mkdir()
+
+    def fake_run(command, **kwargs):
+        class Result:
+            returncode = 0
+            stdout = "container-id"
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(
+        "agent.core.execution.podman.subprocess.run",
+        fake_run,
+    )
+
+    backend = PodmanExecutionBackend()
+    backend.execute("echo test", cwd=str(tmp_path))
+
+    result = backend.execute("echo unsafe", cwd=str(outside))
+
+    assert result.success is False
+    assert "inside the mounted project" in result.stderr
+
+    backend.close()
+
+
+def test_podman_backend_unavailable(monkeypatch):
+    def fake_run(command, **kwargs):
         class Result:
             returncode = 1
             stdout = ""
@@ -209,6 +207,4 @@ def test_podman_backend_unavailable(
         fake_run,
     )
 
-    backend = PodmanExecutionBackend()
-
-    assert backend.is_available() is False
+    assert PodmanExecutionBackend().is_available() is False
